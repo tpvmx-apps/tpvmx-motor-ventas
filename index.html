@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Motor de Ventas TPVMX</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="hero">
+      <div class="hero__content">
+        <div>
+          <p class="eyebrow">Tu Proximo Viaje MX</p>
+          <h1>Motor de Ventas TPVMX</h1>
+          <p class="hero__subtitle">Control y seguimiento para convertir mas viajeros en ventas</p>
+        </div>
+        <div class="hero__actions">
+          <span class="sync-pill" id="sync-status">Conectando Supabase...</span>
+          <button class="primary-button" type="button" id="open-lead-form">Agregar lead</button>
+        </div>
+      </div>
+
+      <section class="metrics" id="metrics"></section>
+    </header>
+
+    <main class="workspace">
+      <aside class="control-panel">
+        <section class="panel-card">
+          <div class="panel-card__header">
+            <div>
+              <p class="panel-label">Alta manual</p>
+              <h2 id="form-title">Nuevo lead</h2>
+            </div>
+            <button type="button" class="ghost-button" id="reset-form">Limpiar</button>
+          </div>
+
+          <form id="lead-form" class="lead-form">
+            <input type="hidden" id="lead-id">
+
+            <label>
+              <span>Nombre del cliente</span>
+              <input type="text" id="client-name" placeholder="Ej. Laura Martinez" required>
+            </label>
+
+            <label>
+              <span>Telefono</span>
+              <input type="tel" id="phone" placeholder="5512345678" required>
+            </label>
+
+            <label>
+              <span>Tour o destino de interes</span>
+              <input type="text" id="destination" placeholder="Ej. Villa del Carbon + Presa del Llano" required>
+            </label>
+
+            <label>
+              <span>Fecha de entrada</span>
+              <input type="date" id="entry-date" required>
+            </label>
+
+            <label>
+              <span>Ultimo mensaje o resumen</span>
+              <textarea id="last-message" rows="3" placeholder="Resumen de la conversacion reciente"></textarea>
+            </label>
+
+            <label>
+              <span>Asesor asignado</span>
+              <input type="text" id="advisor" placeholder="Ej. Mariana">
+            </label>
+
+            <label>
+              <span>Proxima accion</span>
+              <input type="text" id="next-action" placeholder="Ej. Confirmar anticipo">
+            </label>
+
+            <label>
+              <span>Fecha de seguimiento</span>
+              <input type="date" id="follow-up-date">
+            </label>
+
+            <label>
+              <span>Estatus</span>
+              <select id="status">
+                <option value="Nuevos">Nuevos</option>
+                <option value="Pendientes">Pendientes</option>
+                <option value="Cotizados">Cotizados</option>
+                <option value="Seguimiento">Seguimiento</option>
+                <option value="Cerrados">Cerrados</option>
+                <option value="Perdidos">Perdidos</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Notas</span>
+              <textarea id="notes" rows="4" placeholder="Detalles, objeciones, acuerdos, comentarios internos"></textarea>
+            </label>
+
+            <div class="form-actions">
+              <button class="primary-button" type="submit" id="submit-button">Guardar lead</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel-card panel-card--integration">
+          <p class="panel-label">Preparado para crecer</p>
+          <h2>Base lista para integraciones futuras</h2>
+          <ul class="integration-list">
+            <li>Enlace directo a conversaciones de WhatsApp.</li>
+            <li>Estructura reservada para integrar webhook de YCloud despues.</li>
+            <li>API conectada a Supabase y lista para seguir creciendo.</li>
+          </ul>
+        </section>
+      </aside>
+
+      <section class="board-panel">
+        <div class="board-header">
+          <div>
+            <p class="panel-label">Pipeline comercial</p>
+            <h2>Vista general del avance</h2>
+          </div>
+          <div class="board-legend">
+            <span class="legend-item legend-item--stuck">Atrasados</span>
+            <span class="legend-item legend-item--today">Hoy</span>
+          </div>
+        </div>
+
+        <div class="board" id="board"></div>
+      </section>
+    </main>
+  </div>
+
+  <template id="metric-template">
+    <article class="metric-card">
+      <p class="metric-card__label"></p>
+      <strong class="metric-card__value"></strong>
+      <span class="metric-card__hint"></span>
+    </article>
+  </template>
+
+  <template id="column-template">
+    <section class="kanban-column">
+      <header class="kanban-column__header">
+        <div>
+          <h3></h3>
+          <p class="kanban-column__meta"></p>
+        </div>
+        <span class="kanban-column__count"></span>
+      </header>
+      <div class="kanban-column__dropzone"></div>
+    </section>
+  </template>
+
+  <template id="card-template">
+    <article class="lead-card" draggable="true">
+      <div class="lead-card__top">
+        <div>
+          <h4 class="lead-card__name"></h4>
+          <p class="lead-card__phone"></p>
+        </div>
+        <span class="lead-card__badge"></span>
+      </div>
+
+      <div class="lead-card__body">
+        <p><strong>Interes:</strong> <span class="lead-card__destination"></span></p>
+        <p><strong>Entrada:</strong> <span class="lead-card__entry"></span></p>
+        <p><strong>Ultima actividad:</strong> <span class="lead-card__activity"></span></p>
+        <p><strong>Ultimo mensaje:</strong> <span class="lead-card__message"></span></p>
+        <p><strong>Asesor:</strong> <span class="lead-card__advisor"></span></p>
+        <p><strong>Proxima accion:</strong> <span class="lead-card__next"></span></p>
+        <p><strong>Seguimiento:</strong> <span class="lead-card__followup"></span></p>
+        <p><strong>Notas:</strong> <span class="lead-card__notes"></span></p>
+      </div>
+
+      <footer class="lead-card__actions">
+        <button type="button" class="ghost-button" data-action="whatsapp">Abrir WhatsApp</button>
+        <button type="button" class="ghost-button" data-action="move">Mover estatus</button>
+        <button type="button" class="ghost-button" data-action="edit">Editar</button>
+      </footer>
+    </article>
+  </template>
+
+  <dialog class="status-dialog" id="status-dialog">
+    <form method="dialog" class="status-dialog__sheet">
+      <div class="status-dialog__header">
+        <div>
+          <p class="panel-label">Mover estatus</p>
+          <h2 id="status-dialog-title">Selecciona el siguiente paso</h2>
+        </div>
+        <button type="submit" class="ghost-button">Cerrar</button>
+      </div>
+      <div class="status-dialog__options" id="status-dialog-options"></div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>

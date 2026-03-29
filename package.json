@@ -1,0 +1,15 @@
+{
+  "name": "motor-de-ventas-tpvmx",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Motor de Ventas TPVMX con Node.js, Supabase y webhooks de YCloud",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^17.3.1"
+  }
+}
