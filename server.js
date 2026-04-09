@@ -339,6 +339,8 @@ function mapDbLeadToClient(lead) {
     lastMessage: lead.last_message || "",
     lastActivityAt: lead.last_activity_at || new Date().toISOString(),
     source: lead.source || "manual",
+    category: lead.category || "Cliente",
+    isActive: lead.is_active !== false
   };
 }
 
