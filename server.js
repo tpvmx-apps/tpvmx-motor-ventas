@@ -5,7 +5,7 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// 2. FUNCIÓN DE PROCESAMIENTO
+// 2. FUNCIÓN DE PROCESAMIENTO PRINCIPAL
 async function handleRequest(request) {
   const url = new URL(request.url);
   const path = url.pathname;
@@ -64,7 +64,7 @@ async function handleRequest(request) {
   }
 }
 
-// 3. TRADUCTORES DE DATOS
+// 3. TRADUCTORES DE DATOS (MAPEO)
 function mapDbLeadToClient(lead) {
   return {
     id: lead.id,
@@ -108,7 +108,7 @@ function mapClientLeadToDb(lead) {
   return dbData;
 }
 
-// ESTO ES LO QUE REEMPLAZA AL EXPORT (Formato antiguo compatible)
+// 4. EXPORTACIÓN COMPATIBLE (Clave para evitar el error)
 module.exports = {
   fetch: handleRequest
 };
