@@ -5,6 +5,13 @@ const https = require("https");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+function setCorsHeaders(res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type,YCloud-Signature");
+  res.setHeader("Cache-Control", "no-store");
+}
+
 
 const PORT = Number(process.env.PORT || 8787);
 const ROOT_DIR = __dirname;
@@ -605,12 +612,6 @@ function sendFile(res, filePath) {
   stream.pipe(res);
 }
 
-function setCorsHeaders(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type,YCloud-Signature");
-  res.setHeader("Cache-Control", "no-store");
-}
 
 function getMimeType(filePath) {
   const extension = path.extname(filePath).toLowerCase();
