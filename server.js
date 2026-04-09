@@ -1,452 +1,131 @@
-require('dotenv').config();
+import { createClient } from '@supabase/supabase-js';
 
-const http = require("http");
-const https = require("https");
-const fs = require("fs");
-const path = require("path");
-const crypto = require("crypto");
+// 1. CONFIGURACIÓN DE SUPABASE
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_ANON_KEY
+);
 
-function setCorsHeaders(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type,YCloud-Signature");
-  res.setHeader("Cache-Control", "no-store");
-}
+export default {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    const path = url.pathname;
 
-const PORT = Number(process.env.PORT || 8787);
-const ROOT_DIR = __dirname;
-const SUPABASE_URL = (process.env.TPVMX_SUPABASE_URL || "").replace(/\/$/, "");
-const SUPABASE_SERVICE_ROLE_KEY = process.env.TPVMX_SUPABASE_SERVICE_ROLE_KEY || "";
-const YCLOUD_API_BASE = (process.env.TPVMX_YCLOUD_API_BASE || "https://api.ycloud.com/v2").replace(/\/$/, "");
-const YCLOUD_API_KEY = process.env.TPVMX_YCLOUD_API_KEY || "";
-const YCLOUD_WEBHOOK_SECRET = process.env.TPVMX_YCLOUD_WEBHOOK_SECRET || "";
-const YCLOUD_FROM = process.env.TPVMX_YCLOUD_FROM || "";
-const PIPELINE = new Set(["Nuevos", "Pendientes", "Cotizados", "Seguimiento", "Cerrados", "Perdidos"]);
+    // Configuración de CORS para que el CRM pueda hablar con el servidor
+    const corsHeaders = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    };
 
-const STATIC_FILES = new Map([
-  ["/", path.join(ROOT_DIR, "index.html")],
-  ["/index.html", path.join(ROOT_DIR, "index.html")],
-  ["/styles.css", path.join(ROOT_DIR, "styles.css")],
-  ["/app.js", path.join(ROOT_DIR, "app.js")],
-]);
-
-const server = http.createServer(async (req, res) => {
-  setCorsHeaders(res);
-
-  if (req.method === "OPTIONS") {
-    res.writeHead(204);
-    res.end();
-    return;
-  }
-
-  try {
-    const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
-
-    if (url.pathname === "/api/health" && req.method === "GET") {
-      sendJson(res, 200, {
-        ok: true,
-        supabaseConfigured: Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY),
-        webhookPrepared: true,
-        ycloudConfigured: Boolean(YCLOUD_API_KEY),
-      });
-      return;
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { headers: corsHeaders });
     }
 
-    if (url.pathname === "/api/leads" && req.method === "GET") {
-      const leads = await listLeads();
-      sendJson(res, 200, leads);
-      return;
-    }
-
-    if (url.pathname === "/api/leads" && req.method === "POST") {
-      const payload = await readJsonBody(req);
-      const savedLead = await saveLeadFromClient(payload);
-      sendJson(res, 200, savedLead);
-      return;
-    }
-
-    if ((url.pathname === "/webhook" || url.pathname === "/api/webhooks/ycloud") && req.method === "POST") {
-      const rawBody = await readRawBody(req);
-      let event = {};
-
-      try {
-        event = rawBody ? JSON.parse(rawBody) : {};
-      } catch (err) {
-        console.error("❌ Error parseando JSON:", err.message);
-        sendJson(res, 200, { received: true, error: "invalid_json" });
-        return;
-      }
-
-      if (YCLOUD_WEBHOOK_SECRET) {
-        const signatureHeader = req.headers["ycloud-signature"];
-        if (!verifyYCloudSignature(rawBody, signatureHeader, YCLOUD_WEBHOOK_SECRET)) {
-          console.error("❌ Firma inválida");
-          sendJson(res, 401, { error: "invalid_signature" });
-          return;
-        }
-      }
-
-      try {
-        const result = await handleYCloudWebhook(event);
-        sendJson(res, 200, result);
-        return;
-      } catch (err) {
-        console.error("❌ Error en handleYCloudWebhook:", err.message);
-        sendJson(res, 500, { error: "internal_error", detail: err.message });
-        return;
-      }
-    }
-
-    if (url.pathname === "/api/messages/send" && req.method === "POST") {
-      const payload = await readJsonBody(req);
-      const result = await sendYCloudMessage(payload);
-      sendJson(res, 200, result);
-      return;
-    }
-
-    if (STATIC_FILES.has(url.pathname)) {
-      sendFile(res, STATIC_FILES.get(url.pathname));
-      return;
-    }
-
-    sendJson(res, 404, { error: "not_found" });
-  } catch (error) {
-    sendJson(res, 500, {
-      error: "internal_error",
-      detail: error.message,
-    });
-  }
-});
-
-server.listen(PORT, () => {
-  console.log(`Motor de Ventas TPVMX listo en http://localhost:${PORT}`);
-});
-
-// --- FUNCIONES DE LÓGICA ---
-
-async function listLeads() {
-  const data = await supabaseRequest("GET", "/rest/v1/leads?select=*");
-  const leads = Array.isArray(data) ? data : [];
-  return leads.map(mapDbLeadToClient).sort(compareLeadsByActivity);
-}
-
-async function saveLeadFromClient(clientLead) {
-  assertSupabaseConfigured();
-  const phone = normalizePhone(clientLead.phone);
-  if (!phone) throw new Error("El telefono es obligatorio.");
-
-  const existingLead = clientLead.id ? await findLeadById(clientLead.id) : await findLeadByPhone(phone);
-  const dbPayload = mapClientLeadToDb(clientLead);
-
-  if (!existingLead) {
-    const created = await insertLead({
-      ...dbPayload,
-      phone,
-      source: dbPayload.source || "manual",
-      entry_date: dbPayload.entry_date || todayDate(),
-      last_activity_at: dbPayload.last_activity_at || new Date().toISOString(),
-      status: normalizeStatus(dbPayload.status),
-    });
-    return mapDbLeadToClient(created);
-  }
-
-  const updated = await updateLeadById(existingLead.id, {
-    ...dbPayload,
-    phone,
-    status: normalizeStatus(dbPayload.status || existingLead.status),
-    last_activity_at: dbPayload.last_activity_at || existingLead.last_activity_at || new Date().toISOString(),
-  });
-  return mapDbLeadToClient(updated);
-}
-
-async function handleYCloudWebhook(event) {
-  assertSupabaseConfigured();
-
-  const eventType = event?.type || "";
-  const message = event?.whatsappInboundMessage || event?.whatsappMessage || null;
-
-  if (!message || !["whatsapp.inbound.message", "whatsapp.inbound_message.received"].includes(eventType)) {
-    return { received: true, ignored: true };
-  }
-
-  const phone = normalizePhone(message.from || "");
-  const text = extractYCloudMessageText(message);
-  
-  // Usamos la función que creamos para las respuestas de abril/mayo
-  const autoReply = typeof buildAutoReply === "function" ? buildAutoReply(text) : null;
-  const activityAt = new Date().toISOString();
-
-  const existingLead = await findLeadByPhone(phone);
-  let savedLead;
-
-  // --- LÓGICA DE GUARDADO Y MOVIMIENTO DE BLOQUES ---
-  if (!existingLead) {
-    savedLead = await insertLead({
-      phone,
-      last_message: text,
-      last_activity_at: activityAt,
-      status: "Nuevos",
-      category: "Cliente", 
-      is_active: true,
-      source: "ycloud-webhook"
-    });
-  } else {
-    // Si el cliente interactúa con el menú, lo movemos a "Cotizados" automáticamente
-    let newStatus = existingLead.status;
-    const cleanText = text.toLowerCase().trim();
-    if (cleanText.length === 1 || cleanText.includes("abril") || cleanText.includes("mayo")) {
-      newStatus = "Cotizados";
-    }
-
-    savedLead = await updateLeadById(existingLead.id, {
-      last_message: text,
-      last_activity_at: activityAt,
-      status: newStatus
-    });
-  }
-
-  // --- FILTRO DE ALIADOS Y RESPUESTA ---
-  let replyResult = null;
-  const isClient = (savedLead.category || "Cliente") === "Cliente";
-  const botEnabled = savedLead.is_active !== false;
-
-  if (isClient && botEnabled && autoReply && YCLOUD_API_KEY) {
     try {
-      replyResult = await sendYCloudMessage({ to: phone, text: autoReply });
-      
-      // Registramos que el bot habló para el futuro seguimiento automático
-      await updateLeadById(savedLead.id, { 
-        last_bot_contact_at: new Date().toISOString() 
+      // RUTA: OBTENER LEADS
+      if (path === '/api/leads' && request.method === 'GET') {
+        const { data, error } = await supabase
+          .from('leads')
+          .select('*')
+          .order('last_activity_at', { ascending: false });
+
+        if (error) throw error;
+
+        // Convertimos los datos de la base de datos al formato que entiende el CRM
+        const leads = data.map(mapDbLeadToClient);
+        return new Response(JSON.stringify(leads), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // RUTA: GUARDAR O ACTUALIZAR LEAD
+      if (path === '/api/leads' && request.method === 'POST') {
+        const leadData = await request.json();
+        
+        // Convertimos del formato CRM al formato de Base de Datos (Supabase)
+        const dbLead = mapClientLeadToDb(leadData);
+
+        const { data, error } = await supabase
+          .from('leads')
+          .upsert(dbLead, { onConflict: 'phone' })
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        return new Response(JSON.stringify(mapDbLeadToClient(data)), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response('Not Found', { status: 404 });
+    } catch (error) {
+      console.error('Error en el servidor:', error);
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
-    } catch (err) {
-      console.error("❌ Error al responder:", err.message);
     }
-  }
+  },
+};
 
-  return {
-    received: true,
-    autoReplySent: Boolean(replyResult),
-    category: savedLead.category,
-    status: savedLead.status
-  };
-}
+// --- FUNCIONES DE TRADUCCIÓN (EL PUENTE) ---
 
-async function sendYCloudMessage(payload) {
-  if (!YCLOUD_API_KEY) throw new Error("Falta TPVMX_YCLOUD_API_KEY.");
-
-  const to = formatE164Phone(payload.to || payload.phone || "");
-  const from = payload.from || YCLOUD_FROM;
-  const text = String(payload.text || "").trim();
-
-  if (!to || !from || !text) throw new Error("Datos insuficientes para envío.");
-
-  const body = { from, to, type: "text", text: { body: text } };
-
-  const response = await requestJson({
-    method: "POST",
-    url: `${YCLOUD_API_BASE}/whatsapp/messages/sendDirectly`,
-    headers: { "X-API-Key": YCLOUD_API_KEY, "Content-Type": "application/json" },
-    body,
-  });
-
-  return { ok: true, request: body, ycloud: response };
-}
-
-// --- UTILIDADES DE BASE DE DATOS (SUPABASE) ---
-
-async function findLeadByPhone(phone) {
-  const normalized = normalizePhone(phone);
-  if (!normalized) return null;
-  const data = await supabaseRequest("GET", `/rest/v1/leads?select=*&phone=eq.${encodeURIComponent(normalized)}&limit=1`);
-  return Array.isArray(data) && data.length ? data[0] : null;
-}
-
-async function findLeadById(id) {
-  if (!id) return null;
-  const data = await supabaseRequest("GET", `/rest/v1/leads?select=*&id=eq.${encodeURIComponent(id)}&limit=1`);
-  return Array.isArray(data) && data.length ? data[0] : null;
-}
-
-async function insertLead(payload) {
-  const data = await supabaseRequest("POST", "/rest/v1/leads", payload, { Prefer: "return=representation" });
-  return Array.isArray(data) ? data[0] : data;
-}
-
-async function updateLeadById(id, payload) {
-  const data = await supabaseRequest("PATCH", `/rest/v1/leads?id=eq.${encodeURIComponent(id)}`, payload, { Prefer: "return=representation" });
-  return Array.isArray(data) ? data[0] : data;
-}
-
-async function supabaseRequest(method, resourcePath, body, extraHeaders = {}) {
-  assertSupabaseConfigured();
-  return requestJson({
-    method,
-    url: `${SUPABASE_URL}${resourcePath}`,
-    headers: {
-      apikey: SUPABASE_SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      "Content-Type": "application/json",
-      ...extraHeaders,
-    },
-    body,
-  });
-}
-
-function assertSupabaseConfigured() {
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) throw new Error("Falta configuración de Supabase.");
-}
-
-// --- COMUNICACIÓN HTTP ---
-
-function requestJson({ method, url, headers = {}, body }) {
-  const target = new URL(url);
-  const transport = target.protocol === "https:" ? https : http;
-
-  return new Promise((resolve, reject) => {
-    const request = transport.request({
-      method, hostname: target.hostname,
-      port: target.port || (target.protocol === "https:" ? 443 : 80),
-      path: `${target.pathname}${target.search}`,
-      headers,
-    }, (response) => {
-      const chunks = [];
-      response.on("data", (chunk) => chunks.push(chunk));
-      response.on("end", () => {
-        const text = Buffer.concat(chunks).toString("utf8");
-        const isJson = (response.headers["content-type"] || "").includes("application/json");
-        const parsed = text && isJson ? JSON.parse(text) : text;
-        if (response.statusCode < 200 || response.statusCode >= 300) {
-          reject(new Error(typeof parsed === "string" ? parsed : JSON.stringify(parsed)));
-          return;
-        }
-        resolve(parsed);
-      });
-    });
-    request.on("error", reject);
-    if (body) request.write(JSON.stringify(body));
-    request.end();
-  });
-}
-
-// --- MAPPERS Y NORMALIZACIÓN ---
-
+/**
+ * Pasa los datos de la Base de Datos al Navegador (CRM)
+ */
 function mapDbLeadToClient(lead) {
   return {
     id: lead.id,
     name: lead.name || "",
-    phone: normalizePhone(lead.phone || ""),
-    status: normalizeStatus(lead.status),
+    phone: lead.phone || "",
+    status: lead.status || "Nuevos",
+    destination: lead.destination || "",
+    entryDate: lead.entry_date || "",
     lastMessage: lead.last_message || "",
-    lastActivityAt: lead.last_activity_at || new Date().toISOString(),
+    advisor: lead.advisor || "",
+    nextAction: lead.next_action || "",
+    followUpDate: lead.follow_up_date || "",
+    notes: lead.notes || "",
     source: lead.source || "manual",
+    lastActivityAt: lead.last_activity_at || lead.updated_at,
+    // --- ESTO ASEGURA QUE EL CRM VEA SI ES ALIADO ---
     category: lead.category || "Cliente",
-    isActive: lead.is_active !== false
+    is_active: lead.is_active !== false
   };
 }
 
+/**
+ * Pasa los datos del Navegador (CRM) a la Base de Datos (Supabase)
+ */
 function mapClientLeadToDb(lead) {
   return {
+    // Si viene un ID lo usamos, si no Supabase crea uno
+    ...(lead.id && !lead.id.startsWith('lead-') ? { id: lead.id } : {}),
     name: lead.name || null,
-    phone: normalizePhone(lead.phone || ""),
-    status: normalizeStatus(lead.status),
+    phone: normalizePhone(lead.phone),
+    status: lead.status || "Nuevos",
+    destination: lead.destination || "",
+    entry_date: lead.entryDate || new Date().toISOString(),
+    last_message: lead.lastMessage || "",
+    advisor: lead.advisor || "",
+    next_action: lead.nextAction || "",
+    follow_up_date: lead.followUpDate || null,
+    notes: lead.notes || "",
     source: lead.source || "manual",
+    last_activity_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    // --- ESTO GUARDA POR FIN LA CATEGORÍA Y EL BOT ---
     category: lead.category || "Cliente",
-    is_active: lead.isActive !== undefined ? lead.isActive : true
+    is_active: lead.is_active !== undefined ? lead.is_active : true
   };
 }
-function normalizeStatus(status) {
-  return PIPELINE.has(status) ? status : "Nuevos";
-}
 
+/**
+ * Limpia el teléfono para que siempre tenga 10 dígitos
+ */
 function normalizePhone(phone) {
-  const digits = String(phone || "").replace(/\D+/g, "");
+  const digits = String(phone).replace(/\D/g, "");
   return digits.length > 10 ? digits.slice(-10) : digits;
-}
-
-function formatE164Phone(phone) {
-  const digits = String(phone || "").replace(/\D+/g, "");
-  if (!digits) return "";
-  return digits.length === 10 ? `+52${digits}` : `+${digits}`;
-}
-
-function isoToDate(value) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? todayDate() : date.toISOString().slice(0, 10);
-}
-
-function todayDate() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function compareLeadsByActivity(a, b) {
-  return new Date(b.lastActivityAt) - new Date(a.lastActivityAt);
-}
-
-function extractYCloudMessageText(message) {
-  const type = message?.type || "text";
-  if (type === "text") return message?.text?.body || "";
-  if (type === "interactive") return message?.interactive?.buttonReply?.title || message?.interactive?.listReply?.title || "";
-  return `[Mensaje ${type}]`;
-}
-
-function verifyYCloudSignature(rawBody, signatureHeader, secret) {
-  if (!signatureHeader || !secret) return false;
-  const parts = Object.fromEntries(signatureHeader.split(",").map(i => i.split("=")));
-  if (!parts.t || !parts.s) return false;
-  const expected = crypto.createHmac("sha256", secret).update(`${parts.t}.${rawBody}`).digest("hex");
-  return parts.s === expected;
-}
-
-function readRawBody(req) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    req.on("data", c => chunks.push(c));
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-    req.on("error", reject);
-  });
-}
-
-async function readJsonBody(req) {
-  const raw = await readRawBody(req);
-  return raw ? JSON.parse(raw) : {};
-}
-
-function sendJson(res, statusCode, payload) {
-  const json = JSON.stringify(payload);
-  res.writeHead(statusCode, { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(json) });
-  res.end(json);
-}
-
-function sendFile(res, filePath) {
-  const contentType = getMimeType(filePath);
-  const stream = fs.createReadStream(filePath);
-
-  stream.on("open", () => {
-    res.writeHead(200, {
-      "Content-Type": contentType,
-    });
-  });
-
-  stream.on("error", () => {
-    sendJson(res, 404, { error: "file_not_found" });
-  });
-
-  stream.pipe(res);
-}
-
-function getMimeType(filePath) {
-  const extension = path.extname(filePath).toLowerCase();
-
-  switch (extension) {
-    case ".html":
-      return "text/html; charset=utf-8";
-    case ".css":
-      return "text/css; charset=utf-8";
-    case ".js":
-      return "application/javascript; charset=utf-8";
-    case ".json":
-      return "application/json; charset=utf-8";
-    default:
-      return "application/octet-stream";
-  }
 }
