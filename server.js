@@ -1,11 +1,11 @@
 const { createClient } = require('@supabase/supabase-js');
 
-// 1. CONFIGURACIÓN DE SUPABASE
+// 1. CONEXIÓN A SUPABASE
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// 2. FUNCIÓN PRINCIPAL (Versión compatible)
+// 2. FUNCIÓN DE PROCESAMIENTO
 async function handleRequest(request) {
   const url = new URL(request.url);
   const path = url.pathname;
@@ -21,7 +21,7 @@ async function handleRequest(request) {
   }
 
   try {
-    // RUTA: OBTENER LEADS
+    // RUTA PARA LEER DATOS
     if (path === '/api/leads' && request.method === 'GET') {
       const { data, error } = await supabase
         .from('leads')
@@ -36,7 +36,7 @@ async function handleRequest(request) {
       });
     }
 
-    // RUTA: GUARDAR O ACTUALIZAR
+    // RUTA PARA GUARDAR/ACTUALIZAR
     if (path === '/api/leads' && request.method === 'POST') {
       const leadData = await request.json();
       const dbLead = mapClientLeadToDb(leadData);
@@ -54,7 +54,7 @@ async function handleRequest(request) {
       });
     }
 
-    return new Response('Ruta no encontrada', { status: 404 });
+    return new Response('No encontrado', { status: 404 });
 
   } catch (error) {
     return new Response(JSON.stringify({ error: error.message }), {
@@ -64,7 +64,7 @@ async function handleRequest(request) {
   }
 }
 
-// 3. FUNCIONES DE APOYO
+// 3. TRADUCTORES DE DATOS
 function mapDbLeadToClient(lead) {
   return {
     id: lead.id,
@@ -108,7 +108,7 @@ function mapClientLeadToDb(lead) {
   return dbData;
 }
 
-// Exportación para Render/Cloudflare/Node
+// ESTO ES LO QUE REEMPLAZA AL EXPORT (Formato antiguo compatible)
 module.exports = {
   fetch: handleRequest
 };
