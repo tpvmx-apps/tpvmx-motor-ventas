@@ -8,6 +8,7 @@ const PIPELINE = [
   { key: "Seguimiento", slug: "seguimiento", description: "Cerca del cierre" },
   { key: "Cerrados", slug: "cerrados", description: "Ventas hechas" },
   { key: "Perdidos", slug: "perdidos", description: "No concretados" },
+  { key: "Aliados y Familia", slug: "aliados", description: "Contactos personales y socios" },
 ];
 
 const state = { apiBase: DEFAULT_API_BASE, leads: [], syncMode: "loading" };
@@ -179,5 +180,4 @@ async function apiRequest(path, opts = {}) {
     headers: { "Content-Type": "application/json" },
     body: opts.body ? JSON.stringify(opts.body) : null
   });
-  return r.ok ? r.json() : Promise.reject();
-}
+  return r.ok ? r.json() : Promise.reject();p
