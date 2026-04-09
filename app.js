@@ -1,4 +1,4 @@
-// 1. CONFIGURACIÓN DEL PIPELINE (Añadimos la columna especial)
+// 1. CONFIGURACIÓN DEL PIPELINE
 const DEFAULT_API_BASE = window.location.protocol === "file:" ? "http://localhost:8787/api" : `${window.location.origin}/api`;
 
 const PIPELINE = [
@@ -8,7 +8,6 @@ const PIPELINE = [
   { key: "Seguimiento", slug: "seguimiento", description: "Cerca del cierre" },
   { key: "Cerrados", slug: "cerrados", description: "Ventas hechas" },
   { key: "Perdidos", slug: "perdidos", description: "No concretados" },
-  // NUEVA COLUMNA PARA TU GENTE PERSONAL
   { key: "Aliados y Familia", slug: "aliados", description: "Contactos personales y socios" },
 ];
 
@@ -20,7 +19,7 @@ const formatPhone = (p) => { const d = cleanPhone(p); return d.length === 10 ? `
 const formatDateTime = (v) => v ? new Intl.DateTimeFormat("es-MX", {day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit"}).format(new Date(v)) : "Sin registro";
 const formatDate = (v) => v ? new Intl.DateTimeFormat("es-MX", {day:"2-digit", month:"short", year:"numeric"}).format(v.includes("T") ? new Date(v) : new Date(`${v}T12:00:00`)) : "Sin fecha";
 
-// 3. REFERENCIAS DEL FORMULARIO
+// 3. REFERENCIAS DEL FORMULARIO (Agregamos los campos faltantes)
 const fields = {
   id: document.querySelector("#lead-id"),
   name: document.querySelector("#client-name"),
@@ -33,6 +32,8 @@ const fields = {
   followUpDate: document.querySelector("#follow-up-date"),
   notes: document.querySelector("#notes"),
   status: document.querySelector("#status"),
+  category: document.querySelector("#category"), // Agregado
+  isActive: document.querySelector("#is-active"), // Agregado
 };
 
 // 4. INICIO DE LA APLICACIÓN
@@ -44,7 +45,6 @@ async function startApp() {
     document.querySelector("#lead-form").scrollIntoView({ behavior: "smooth" }); 
   });
   await loadInitialLeads();
-  render();
 }
 startApp();
 
@@ -57,9 +57,10 @@ async function loadInitialLeads() {
   render();
 }
 
-// 5. GUARDAR Y ACTUALIZAR (CORREGIDO)
+// 5. GUARDAR Y ACTUALIZAR
 async function handleSubmit(event) {
   event.preventDefault();
+  
   const lead = {
     id: fields.id.value || `lead-${Date.now()}`,
     name: fields.name.value.trim(),
@@ -72,33 +73,34 @@ async function handleSubmit(event) {
     followUpDate: fields.followUpDate.value,
     notes: fields.notes.value.trim(),
     status: fields.status.value,
-    // Aquí forzamos que use los nombres que Supabase entiende
-    category: document.getElementById('category').value,
-    is_active: document.getElementById('is-active').checked,
+    category: fields.category.value, // Ahora usa el objeto fields
+    is_active: fields.isActive.checked,
     updatedAt: new Date().toISOString(),
     lastActivityAt: new Date().toISOString()
   };
 
   try {
     const saved = await apiRequest("/leads", { method: "POST", body: lead });
+    const normalizedSaved = normalizeLead(saved);
     const idx = state.leads.findIndex(l => l.id === lead.id);
-    if(idx >= 0) state.leads[idx] = normalizeLead(saved);
-    else state.leads.unshift(normalizeLead(saved));
-    render();
+    
+    if(idx >= 0) state.leads[idx] = normalizedSaved;
+    else state.leads.unshift(normalizedSaved);
+    
     resetForm();
-    alert("¡Datos guardados correctamente!");
+    render();
+    alert("¡Viajero guardado con éxito!");
   } catch(e) { 
     alert("Error al conectar con Supabase. Revisa tu conexión."); 
   }
 }
 
-// 6. RENDERIZADO DEL TABLERO CON SEPARACIÓN DE FAMILIA
+// 6. RENDERIZADO DEL TABLERO
 function render() {
   const board = document.querySelector("#board");
   if(!board) return;
   board.innerHTML = "";
 
-  // Actualizar semáforo de conexión
   const syncStatus = document.querySelector("#sync-status");
   if (syncStatus) {
     syncStatus.className = "sync-pill " + (state.syncMode === "api" ? "sync-pill--api" : "sync-pill--error");
@@ -109,13 +111,10 @@ function render() {
     const col = document.createElement("div");
     col.className = `kanban-column status-${stage.slug}`;
     
-    // FILTRO INTELIGENTE:
     let leads;
     if (stage.key === "Aliados y Familia") {
-      // En esta columna solo van los que NO son "Cliente"
       leads = state.leads.filter(l => l.category !== "Cliente");
     } else {
-      // En las demás columnas solo van los "Clientes"
       leads = state.leads.filter(l => l.status === stage.key && l.category === "Cliente");
     }
 
@@ -125,18 +124,21 @@ function render() {
     leads.forEach(lead => {
       const card = document.createElement("div");
       card.className = "lead-card";
+      
+      // REINTEGRAMOS EL ÚLTIMO MENSAJE Y MEJORAMOS EL DISEÑO
       card.innerHTML = `
         <div class="lead-card__badge" style="background:${lead.category === 'Cliente' ? '#007bff' : '#f0ad4e'}">
           ${lead.category} ${lead.is_active ? '🤖' : '🔇'}
         </div>
         <div class="lead-card__content">
           <h4 class="lead-card__name">${lead.name}</h4>
-          <p><strong>Destino:</strong> ${lead.destination}</p>
-          <p><strong>Tel:</strong> ${formatPhone(lead.phone)}</p>
-          <p><strong>Asesor:</strong> ${lead.advisor || "Sin asignar"}</p>
+          <p><strong>📍 Destino:</strong> ${lead.destination}</p>
+          <p><strong>📞 Tel:</strong> ${formatPhone(lead.phone)}</p>
+          <p><strong>💬 Último msj:</strong> ${lead.lastMessage || "Sin mensajes aún"}</p>
+          <p><strong>👤 Asesor:</strong> ${lead.advisor || "Sin asignar"}</p>
           <hr>
-          <p style="color: #d9534f"><strong>Siguiente:</strong> ${lead.nextAction || "Pendiente"}</p>
-          <small>Actividad: ${formatDateTime(lead.lastActivityAt)}</small>
+          <p style="color: #d9534f"><strong>🚀 Siguiente:</strong> ${lead.nextAction || "Pendiente"}</p>
+          <small>📅 Actividad: ${formatDateTime(lead.lastActivityAt)}</small>
         </div>
         <div class="lead-card__actions">
           <button onclick="window.populateFormById('${lead.id}')">✏️ Editar</button>
@@ -165,9 +167,8 @@ window.populateFormById = (id) => {
   fields.followUpDate.value = lead.followUpDate;
   fields.notes.value = lead.notes;
   fields.status.value = lead.status;
-  // Cargar los nuevos campos
-  document.getElementById('category').value = lead.category || "Cliente";
-  document.getElementById('is-active').checked = lead.is_active !== false;
+  fields.category.value = lead.category || "Cliente";
+  fields.isActive.checked = lead.is_active !== false;
   document.querySelector("#lead-form").scrollIntoView({ behavior: "smooth" });
 };
 
@@ -176,8 +177,8 @@ function resetForm() {
   fields.id.value = "";
   fields.entryDate.value = new Date().toISOString().slice(0, 10);
   document.querySelector("#form-title").textContent = "Nuevo Lead";
-  document.getElementById('category').value = "Cliente";
-  document.getElementById('is-active').checked = true;
+  fields.category.value = "Cliente";
+  fields.isActive.checked = true;
 }
 
 function normalizeLead(l) {
