@@ -1,51 +1,70 @@
-const { createClient } = require('@supabase/supabase-js');
-
-// 1. CONEXIÓN
+// 1. CONFIGURACIÓN (Sin 'require' de supabase, usando solo fetch nativo)
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
 
-// 2. PROCESAMIENTO
 async function handleRequest(request) {
   const url = new URL(request.url);
   const path = url.pathname;
+
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, apikey, Authorization',
   };
 
   if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
   try {
-    // LEER LEADS (Aquí recuperamos los mensajes)
+    // RUTA: OBTENER LEADS (GET)
     if (path === '/api/leads' && request.method === 'GET') {
-      const { data, error } = await supabase
-        .from('leads')
-        .select('*')
-        .order('last_activity_at', { ascending: false });
+      const response = await fetch(`${supabaseUrl}/rest/v1/leads?select=*&order=last_activity_at.desc`, {
+        headers: {
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
 
-      if (error) throw error;
+      const data = await response.json();
       const leads = data.map(mapDbLeadToClient);
       return new Response(JSON.stringify(leads), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // GUARDAR LEADS
+    // RUTA: GUARDAR O ACTUALIZAR (POST)
     if (path === '/api/leads' && request.method === 'POST') {
       const leadData = await request.json();
       const dbLead = mapClientLeadToDb(leadData);
-      const { data, error } = await supabase.from('leads').upsert(dbLead, { onConflict: 'phone' }).select().single();
-      if (error) throw error;
-      return new Response(JSON.stringify(mapDbLeadToClient(data)), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+      const response = await fetch(`${supabaseUrl}/rest/v1/leads`, {
+        method: 'POST',
+        headers: {
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation,resolution=merge-duplicates' // Esto hace el UPSERT
+        },
+        body: JSON.stringify(dbLead)
+      });
+
+      const savedData = await response.json();
+      // Si es un array (POST suele devolver array), tomamos el primero
+      const result = Array.isArray(savedData) ? savedData[0] : savedData;
+      
+      return new Response(JSON.stringify(mapDbLeadToClient(result)), { 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      });
     }
 
     return new Response('No encontrado', { status: 404 });
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ error: error.message }), { 
+      status: 500, 
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+    });
   }
 }
 
-// 3. TRADUCTORES (Aquí está el arreglo de los mensajes)
+// 2. TRADUCTORES (Para que los mensajes y categorías funcionen)
 function mapDbLeadToClient(l) {
   return {
     id: l.id,
@@ -54,7 +73,7 @@ function mapDbLeadToClient(l) {
     status: l.status || "Nuevos",
     destination: l.destination || "",
     entryDate: l.entry_date || "",
-    lastMessage: l.last_message || "", // <-- Aseguramos que lea el mensaje de la BD
+    lastMessage: l.last_message || "", 
     advisor: l.advisor || "",
     nextAction: l.next_action || "",
     followUpDate: l.follow_up_date || "",
@@ -66,13 +85,13 @@ function mapDbLeadToClient(l) {
 }
 
 function mapClientLeadToDb(l) {
-  return {
+  const dbData = {
     name: l.name || null,
     phone: String(l.phone || "").replace(/\D/g, "").slice(-10),
     status: l.status || "Nuevos",
     destination: l.destination || "",
     entry_date: l.entryDate || new Date().toISOString(),
-    last_message: l.lastMessage || "", // <-- Guardamos el mensaje correctamente
+    last_message: l.lastMessage || "",
     advisor: l.advisor || "",
     next_action: l.nextAction || "",
     follow_up_date: l.followUpDate || null,
@@ -82,6 +101,12 @@ function mapClientLeadToDb(l) {
     last_activity_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   };
+  // Si no es un lead nuevo de AppSheet (que empiezan con 'lead-'), mandamos el ID para actualizar
+  if (l.id && !String(l.id).startsWith('lead-')) {
+    dbData.id = l.id;
+  }
+  return dbData;
 }
 
+// 3. EXPORTACIÓN PARA RENDER
 module.exports = { fetch: handleRequest };
