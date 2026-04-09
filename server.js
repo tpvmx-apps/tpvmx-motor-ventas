@@ -190,6 +190,14 @@ async function handleYCloudWebhook(event) {
   );
 
   const text = extractYCloudMessageText(message);
+const tours = await fetchToursFromSheet();
+const matches = findMatchingTours(tours, text);
+
+let autoReply = buildTourResponse(matches);
+
+if (!autoReply) {
+  autoReply = buildAutoReply(text);
+}
   const name =
     message?.customerProfile?.name ||
     message?.sender?.name ||
@@ -206,39 +214,50 @@ async function handleYCloudWebhook(event) {
     throw new Error("No se pudo extraer el telefono del webhook.");
   }
 
-  const existingLead = await findLeadByPhone(phone);
+const existingLead = await findLeadByPhone(phone);
 
-  if (!existingLead) {
-    const createdLead = await insertLead({
-      name,
-      phone,
-      last_message: text,
-      entry_date: isoToDate(activityAt),
-      last_activity_at: activityAt,
-      status: "Nuevos",
-      source: "ycloud-webhook",
-    });
+let savedLead;
 
-    return {
-      received: true,
-      createdOrUpdated: true,
-      lead: mapDbLeadToClient(createdLead),
-    };
-  }
-
-  const updatedLead = await updateLeadById(existingLead.id, {
+if (!existingLead) {
+  savedLead = await insertLead({
+    name,
+    phone,
+    last_message: text,
+    entry_date: isoToDate(activityAt),
+    last_activity_at: activityAt,
+    status: "Nuevos",
+    source: "ycloud-webhook",
+  });
+} else {
+  savedLead = await updateLeadById(existingLead.id, {
     name: existingLead.name || name,
     last_message: text,
     last_activity_at: activityAt,
     source: existingLead.source || "ycloud-webhook",
   });
-
-  return {
-    received: true,
-    createdOrUpdated: true,
-    lead: mapDbLeadToClient(updatedLead),
-  };
 }
+
+let replyResult = null;
+
+if (YCLOUD_API_KEY && YCLOUD_FROM && autoReply) {
+  try {
+    replyResult = await sendYCloudMessage({
+      to: phone,
+      text: autoReply,
+    });
+  } catch (err) {
+    console.error("❌ Error enviando respuesta automática:", err.message);
+  }
+} else {
+  console.warn("⚠️ No se envió respuesta automática.");
+}
+
+return {
+  received: true,
+  createdOrUpdated: true,
+  autoReplySent: Boolean(replyResult),
+  lead: mapDbLeadToClient(savedLead),
+};
 
 async function sendYCloudMessage(payload) {
   if (!YCLOUD_API_KEY) {
@@ -609,3 +628,4 @@ function getMimeType(filePath) {
       return "application/octet-stream";
   }
 }
+
