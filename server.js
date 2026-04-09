@@ -402,8 +402,18 @@ function sendJson(res, statusCode, payload) {
 }
 
 function sendFile(res, filePath) {
+  const contentType = getMimeType(filePath);
   const stream = fs.createReadStream(filePath);
-  stream.on("open", () => res.writeHead(200));
-  stream.on("error", () => sendJson(res, 404, { error: "file_not_found" }));
+
+  stream.on("open", () => {
+    res.writeHead(200, {
+      "Content-Type": contentType,
+    });
+  });
+
+  stream.on("error", () => {
+    sendJson(res, 404, { error: "file_not_found" });
+  });
+
   stream.pipe(res);
 }
