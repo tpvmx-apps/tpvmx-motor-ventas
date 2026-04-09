@@ -107,11 +107,11 @@ async function loadInitialLeads() {
 
 async function handleSubmit(event) {
   event.preventDefault();
-
+  const fields = event.target.elements; 
   const lead = {
     id: fields.id.value || createId(),
     name: fields.name.value.trim(),
-    phone: cleanPhone(fields.phone.value),
+    phone: fields.phone.value.trim(),
     destination: fields.destination.value.trim(),
     entryDate: fields.entryDate.value,
     lastMessage: fields.lastMessage.value.trim(),
