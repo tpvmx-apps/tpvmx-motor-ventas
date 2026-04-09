@@ -1,7 +1,6 @@
 {
   "name": "crm-tu-proximo-viaje",
   "version": "1.0.0",
-  "description": "CRM para Tú Próximo Viaje MX",
   "main": "server.js",
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0"
