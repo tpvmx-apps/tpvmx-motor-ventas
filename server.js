@@ -350,9 +350,10 @@ function mapClientLeadToDb(lead) {
     phone: normalizePhone(lead.phone || ""),
     status: normalizeStatus(lead.status),
     source: lead.source || "manual",
+    category: lead.category || "Cliente",
+    is_active: lead.isActive !== undefined ? lead.isActive : true
   };
 }
-
 function normalizeStatus(status) {
   return PIPELINE.has(status) ? status : "Nuevos";
 }
