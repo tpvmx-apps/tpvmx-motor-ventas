@@ -1,6 +1,7 @@
 const { createClient } = require('@supabase/supabase-js');
 
 // 1. CONEXIÓN A SUPABASE
+// Estas variables deben estar configuradas en tu panel de Render
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
@@ -10,6 +11,7 @@ async function handleRequest(request) {
   const url = new URL(request.url);
   const path = url.pathname;
 
+  // Cabeceras CORS para permitir la comunicación con el CRM
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -21,7 +23,7 @@ async function handleRequest(request) {
   }
 
   try {
-    // RUTA PARA LEER DATOS
+    // RUTA PARA LEER LOS DATOS (GET)
     if (path === '/api/leads' && request.method === 'GET') {
       const { data, error } = await supabase
         .from('leads')
@@ -36,7 +38,7 @@ async function handleRequest(request) {
       });
     }
 
-    // RUTA PARA GUARDAR/ACTUALIZAR
+    // RUTA PARA GUARDAR O ACTUALIZAR (POST)
     if (path === '/api/leads' && request.method === 'POST') {
       const leadData = await request.json();
       const dbLead = mapClientLeadToDb(leadData);
@@ -57,6 +59,7 @@ async function handleRequest(request) {
     return new Response('No encontrado', { status: 404 });
 
   } catch (error) {
+    console.error('Error en el servidor:', error);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -108,7 +111,7 @@ function mapClientLeadToDb(lead) {
   return dbData;
 }
 
-// 4. EXPORTACIÓN COMPATIBLE (Clave para evitar el error)
+// 4. EXPORTACIÓN COMPATIBLE CON RENDER
 module.exports = {
   fetch: handleRequest
 };
