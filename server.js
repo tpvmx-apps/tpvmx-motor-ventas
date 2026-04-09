@@ -1,17 +1,17 @@
 import { createClient } from '@supabase/supabase-js';
 
-// 1. CONFIGURACIÓN DE SUPABASE
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_ANON_KEY
-);
+// 1. CONFIGURACIÓN DEL SERVIDOR Y SUPABASE
+// Asegúrate de tener estas variables en el panel de Render
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_ANON_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    // Configuración de CORS para que el CRM pueda hablar con el servidor
+    // Configuración de CORS
     const corsHeaders = {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -32,7 +32,6 @@ export default {
 
         if (error) throw error;
 
-        // Convertimos los datos de la base de datos al formato que entiende el CRM
         const leads = data.map(mapDbLeadToClient);
         return new Response(JSON.stringify(leads), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -42,8 +41,6 @@ export default {
       // RUTA: GUARDAR O ACTUALIZAR LEAD
       if (path === '/api/leads' && request.method === 'POST') {
         const leadData = await request.json();
-        
-        // Convertimos del formato CRM al formato de Base de Datos (Supabase)
         const dbLead = mapClientLeadToDb(leadData);
 
         const { data, error } = await supabase
@@ -59,9 +56,10 @@ export default {
         });
       }
 
-      return new Response('Not Found', { status: 404 });
+      return new Response('Ruta no encontrada', { status: 404 });
+
     } catch (error) {
-      console.error('Error en el servidor:', error);
+      console.error('Error en server.js:', error);
       return new Response(JSON.stringify({ error: error.message }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -70,11 +68,8 @@ export default {
   },
 };
 
-// --- FUNCIONES DE TRADUCCIÓN (EL PUENTE) ---
+// --- FUNCIONES DE TRADUCCIÓN (MAPEO) ---
 
-/**
- * Pasa los datos de la Base de Datos al Navegador (CRM)
- */
 function mapDbLeadToClient(lead) {
   return {
     id: lead.id,
@@ -90,18 +85,16 @@ function mapDbLeadToClient(lead) {
     notes: lead.notes || "",
     source: lead.source || "manual",
     lastActivityAt: lead.last_activity_at || lead.updated_at,
-    // --- ESTO ASEGURA QUE EL CRM VEA SI ES ALIADO ---
+    // Aquí es donde el CRM lee la categoría
     category: lead.category || "Cliente",
     is_active: lead.is_active !== false
   };
 }
-/**
- * Pasa los datos del Navegador (CRM) a la Base de Datos (Supabase)
- */
+
 function mapClientLeadToDb(lead) {
   return {
-    // Si viene un ID lo usamos, si no Supabase crea uno
-    ...(lead.id && !lead.id.startsWith('lead-') ? { id: lead.id } : {}),
+    // Si el ID es manual lo quitamos para que Supabase lo maneje, a menos que sea actualización
+    ...(lead.id && !String(lead.id).startsWith('lead-') ? { id: lead.id } : {}),
     name: lead.name || null,
     phone: normalizePhone(lead.phone),
     status: lead.status || "Nuevos",
@@ -115,15 +108,12 @@ function mapClientLeadToDb(lead) {
     source: lead.source || "manual",
     last_activity_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
-    // --- ESTO GUARDA POR FIN LA CATEGORÍA Y EL BOT ---
+    // Aquí es donde se guarda en la base de datos
     category: lead.category || "Cliente",
     is_active: lead.is_active !== undefined ? lead.is_active : true
   };
 }
 
-/**
- * Limpia el teléfono para que siempre tenga 10 dígitos
- */
 function normalizePhone(phone) {
   const digits = String(phone).replace(/\D/g, "");
   return digits.length > 10 ? digits.slice(-10) : digits;
