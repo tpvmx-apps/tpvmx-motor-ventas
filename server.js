@@ -166,56 +166,68 @@ async function handleYCloudWebhook(event) {
   const message = event?.whatsappInboundMessage || event?.whatsappMessage || null;
 
   if (!message || !["whatsapp.inbound.message", "whatsapp.inbound_message.received"].includes(eventType)) {
-    return { received: true, ignored: true, eventType };
+    return { received: true, ignored: true };
   }
 
-  const phone = normalizePhone(message.from || message?.customerProfile?.phone || "");
+  const phone = normalizePhone(message.from || "");
   const text = extractYCloudMessageText(message);
   
-  // Nota: Estas funciones deben estar definidas para que el bot responda automáticamente
-  let autoReply = null; 
-  if (typeof buildAutoReply === "function") {
-    autoReply = buildAutoReply(text);
-  }
-
-  const name = message?.customerProfile?.name || message?.sender?.name || null;
-  const activityAt = message.createTime || new Date().toISOString();
-
-  if (!phone) throw new Error("No se pudo extraer el telefono.");
+  // Usamos la función que creamos para las respuestas de abril/mayo
+  const autoReply = typeof buildAutoReply === "function" ? buildAutoReply(text) : null;
+  const activityAt = new Date().toISOString();
 
   const existingLead = await findLeadByPhone(phone);
   let savedLead;
 
+  // --- LÓGICA DE GUARDADO Y MOVIMIENTO DE BLOQUES ---
   if (!existingLead) {
     savedLead = await insertLead({
-      name, phone, last_message: text,
-      entry_date: isoToDate(activityAt),
-      last_activity_at: activityAt,
-      status: "Nuevos",
-      source: "ycloud-webhook",
-    });
-  } else {
-    savedLead = await updateLeadById(existingLead.id, {
-      name: existingLead.name || name,
+      phone,
       last_message: text,
       last_activity_at: activityAt,
+      status: "Nuevos",
+      category: "Cliente", 
+      is_active: true,
+      source: "ycloud-webhook"
+    });
+  } else {
+    // Si el cliente interactúa con el menú, lo movemos a "Cotizados" automáticamente
+    let newStatus = existingLead.status;
+    const cleanText = text.toLowerCase().trim();
+    if (cleanText.length === 1 || cleanText.includes("abril") || cleanText.includes("mayo")) {
+      newStatus = "Cotizados";
+    }
+
+    savedLead = await updateLeadById(existingLead.id, {
+      last_message: text,
+      last_activity_at: activityAt,
+      status: newStatus
     });
   }
 
+  // --- FILTRO DE ALIADOS Y RESPUESTA ---
   let replyResult = null;
-  if (YCLOUD_API_KEY && YCLOUD_FROM && autoReply) {
+  const isClient = (savedLead.category || "Cliente") === "Cliente";
+  const botEnabled = savedLead.is_active !== false;
+
+  if (isClient && botEnabled && autoReply && YCLOUD_API_KEY) {
     try {
       replyResult = await sendYCloudMessage({ to: phone, text: autoReply });
+      
+      // Registramos que el bot habló para el futuro seguimiento automático
+      await updateLeadById(savedLead.id, { 
+        last_bot_contact_at: new Date().toISOString() 
+      });
     } catch (err) {
-      console.error("❌ Error enviando respuesta:", err.message);
+      console.error("❌ Error al responder:", err.message);
     }
   }
 
   return {
     received: true,
-    createdOrUpdated: true,
     autoReplySent: Boolean(replyResult),
-    lead: mapDbLeadToClient(savedLead),
+    category: savedLead.category,
+    status: savedLead.status
   };
 }
 
@@ -329,7 +341,6 @@ function mapDbLeadToClient(lead) {
     source: lead.source || "manual",
   };
 }
-
 
 function mapClientLeadToDb(lead) {
   return {
