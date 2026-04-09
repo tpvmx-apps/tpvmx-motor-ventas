@@ -89,7 +89,20 @@
                 <option value="Perdidos">Perdidos</option>
               </select>
             </label>
+            <label>
+            <span>Categoría de Contacto</span>
+            <select id="category">
+                 <option value="Cliente">Cliente</option>
+                 <option value="Aliado">Aliado</option>
+                 <option value="Familia">Familia</option>
+                 <option value="Socio">Socio</option>
+             </select>
+           </label>
 
+<label style="flex-direction: row; align-items: center; gap: 10px;">
+  <input type="checkbox" id="is-active" style="width: 20px; height: 20px;">
+  <span>Bot Encendido (Auto-responder)</span>
+</label>
             <label>
               <span>Notas</span>
               <textarea id="notes" rows="4" placeholder="Detalles, objeciones, acuerdos, comentarios internos"></textarea>
