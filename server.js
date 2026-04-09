@@ -270,7 +270,7 @@ async function sendYCloudMessage(payload) {
   if (!YCLOUD_API_KEY) {
     throw new Error("Falta TPVMX_YCLOUD_API_KEY.");
   }
-
+}
   const to = formatE164Phone(payload.to || payload.phone || "");
   const from = payload.from || YCLOUD_FROM;
   const text = String(payload.text || "").trim();
