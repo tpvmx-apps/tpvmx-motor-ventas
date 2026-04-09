@@ -119,11 +119,15 @@ async function handleSubmit(event) {
     nextAction: fields.nextAction.value.trim(),
     followUpDate: fields.followUpDate.value,
     notes: fields.notes.value.trim(),
-    status: fields.status.value,
+    status: fields.status.value,const lead = {
+  id: fields.id.value || createId(),
+  name: fields.name.value.trim(),
+  category: document.getElementById('category').value,
+  isActive: document.getElementById('is-active').checked,
     updatedAt: new Date().toISOString(),
-    lastActivityAt: new Date().toISOString(),
-    source: "manual",
-  };
+  lastActivityAt: new Date().toISOString(),
+  source: "manual",
+};
 
   if (!lead.name || !lead.phone || !lead.destination || !lead.entryDate) {
     return;
