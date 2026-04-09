@@ -1,15 +1,12 @@
 {
-  "name": "motor-de-ventas-tpvmx",
+  "name": "crm-tu-proximo-viaje",
   "version": "1.0.0",
-  "private": true,
-  "description": "Motor de Ventas TPVMX con Node.js, Supabase y webhooks de YCloud",
+  "description": "CRM para Tú Próximo Viaje MX",
+  "main": "server.js",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0"
+  },
   "scripts": {
     "start": "node server.js"
-  },
-  "engines": {
-    "node": ">=18"
-  },
-  "dependencies": {
-  "@supabase/supabase-js": "^2.0.0"
   }
 }
