@@ -95,7 +95,6 @@ function mapDbLeadToClient(lead) {
     is_active: lead.is_active !== false
   };
 }
-
 /**
  * Pasa los datos del Navegador (CRM) a la Base de Datos (Supabase)
  */
