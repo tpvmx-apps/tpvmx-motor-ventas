@@ -324,10 +324,12 @@ function mapDbLeadToClient(lead) {
     name: lead.name || "",
     phone: normalizePhone(lead.phone || ""),
     status: normalizeStatus(lead.status),
+    lastMessage: lead.last_message || "",
     lastActivityAt: lead.last_activity_at || new Date().toISOString(),
     source: lead.source || "manual",
   };
 }
+
 
 function mapClientLeadToDb(lead) {
   return {
