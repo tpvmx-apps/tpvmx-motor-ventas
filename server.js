@@ -628,4 +628,4 @@ function getMimeType(filePath) {
       return "application/octet-stream";
   }
 }
-
+}
